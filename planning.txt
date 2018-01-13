@@ -4,3 +4,5 @@ ideas:
 	one click clock in
 	on-site forms and sign ups
 	
+need to make ICE card form maker
+use a php to pdf thing
