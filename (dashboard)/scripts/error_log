@@ -1,0 +1,3 @@
+[27-Jun-2017 15:44:28 UTC] PHP Notice:  Undefined index: file in /home/team1676admin/public_html/testing/robotics/scripts/upload_video.php on line 10
+[27-Jun-2017 15:44:28 UTC] PHP Notice:  Undefined index: file in /home/team1676admin/public_html/testing/robotics/scripts/upload_video.php on line 17
+[27-Jun-2017 15:44:28 UTC] PHP Warning:  finfo_file(): Empty filename or path in /home/team1676admin/public_html/testing/robotics/scripts/upload_video.php on line 20

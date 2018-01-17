@@ -1,0 +1,136 @@
+@import url('https://fonts.googleapis.com/css?family=Ubuntu');
+@import url("https://fonts.googleapis.com/css?family=Roboto+Slab");
+
+
+body {
+	font-family: 'Roboto Slab', serif;
+	/*color: white;*/
+	background: url('../images/bg.jpg')
+}
+
+a {
+	color: #ffcc00;
+}
+
+a:hover, a:active {
+	color: #b79200;
+	text-decoration: none;
+}
+
+.navbar {
+	font-family: 'Ubuntu', sans-serif;
+	text-transform: uppercase;
+	font-size: 10pt;
+}
+
+.dropdown-menu {
+	background-color: #ffcc00;
+	min-width: 175px;
+	color: white;
+}
+
+.dropdown-menu li>a {
+	color: white;
+}
+
+.dropdown-menu li>a:hover {
+	background-color: #b79200;
+		color: white;
+
+}
+
+.panel .panel-heading {
+	background-color: #ffcc00;
+	border-color: #b79200;
+	color: white;
+	font-size: 12pt;
+}
+
+/*.panel-body {
+		border-color: #b79200;
+
+}
+*/
+
+.btn {
+	background-color: #ffcc00;
+	border-color: #b79200;
+	color: white;
+}
+
+.btn:hover {
+	background-color: #cca200;
+	color: white;
+}
+
+.panel {
+	/*border-radius: 1px;*/
+		border-color: #b79200;
+}
+
+.panel h3 {
+	margin-top: 0px;
+}
+
+#news {
+	margin-bottom: 30px;
+}
+
+#info {
+	background-color: white;
+}
+
+#info .container {
+	padding-top: 35px;
+	padding-bottom: 35px;
+}
+
+.white {
+	color: white;
+	font-size: 30pt;
+}
+
+.heading {
+	color: white;
+	padding: 50px;
+}
+
+.heading h1 {
+	font-size: 40pt;
+}
+
+.layout {
+	background-color: white;
+	font-size: 14pt;
+	line-height: 160%;
+}
+
+.layout p {
+	margin-bottom: 25px;
+}
+
+.layout .container {
+	padding-top: 50px;
+	padding-bottom: 50px;
+}
+
+.offset {
+	margin-top: 60px;
+}
+
+footer {
+	background-color: #f5f5f5;
+	padding: 10px;
+	min-height: 100px;
+}
+
+footer #social {
+	font-size: 30pt;
+}
+
+footer #social a {
+	margin: 10px;
+}
+
+/* SIGN-IN PAGE STYLE
+

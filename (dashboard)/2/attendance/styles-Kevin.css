@@ -1,0 +1,154 @@
+#header		{	clear: both;					
+							width: 99%;
+							padding:10px;
+							margin-left: auto;				
+							margin-right: auto;	
+					    
+							background-color: rgb(0,0,0);
+						
+						text-align: center;
+								border-bottom: 2px solid yellow;
+								margin-bottom: 15px;
+								
+								
+						}
+
+
+
+body
+ {
+	 
+							background: linear-gradient(to right, #eab92d 0%,#F88017 100%);
+ width:100%;  
+ }
+	/*
+    	background-image: 
+		  LINK DOES NOT WORK
+		url("http://www.team1676.com/signin/images/yellow-gradient-large-1.png"); 
+    	background-size: 100% */
+      
+
+	
+a:link {
+COLOR: #FFFF00;
+}
+a:visited {
+COLOR: #FFFF00;
+}
+a:hover {
+COLOR: #FFFF00;
+}
+a:active {
+COLOR: #FFFF00; 
+}
+.main {
+	position:absolute;
+	margin-top:10px;
+	width:480px;
+	font-size:14px;
+	color:white;
+	text-align:center;
+	margin-left: auto;
+	margin-right: auto;
+	width: 100%;
+	a:link {color:#FFFF00;}    /* unvisited link */
+	
+
+}
+html {
+	background-repeat: repeat-x;
+}
+
+h1 {
+	color:#FFD700;
+	font-family: Verdana, serif;
+	text-shadow: 2px 3px black
+}
+h2 {
+	color:#FFD700;
+	font-family: Verdana, serif;
+	text-shadow: 2px 3px 0 #000;
+}
+
+h3 {
+	color:#FFD700;
+	font-family: Verdana, serif;
+	text-shadow: 2px 3px 0 #000;
+}
+.question
+{
+	color:#F3DD13;
+}
+
+td{
+	text-align:left;
+	color:white;
+	font-size:14px;
+}
+#main {
+	position: absolute;
+	margin-left: auto;
+	margin-right: auto;
+	width: 100%;
+	margin-top:10px;
+}
+.login {
+				width=200px;
+				margin-left:auto;
+				margin-right:auto;
+			}
+.textbox {
+    background: #444;
+    color: #ccc;
+    width: 100px;
+    padding: 6px 15px 6px 35px;
+    border-radius: 20px;
+    box-shadow: 0 1px 0 #ccc inset;
+    transition: 500ms all ease;
+    outline: 0;
+}
+.text {
+	font-size: 17px;
+	stroke: 1px black;
+	font-weight: bold;
+	text-shadow: 0px 0px 0 #000,-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000;
+}
+#top, #bottom, #left, #right {
+	background: black;
+	position: fixed;
+	}
+	#left, #right {
+		top: 0; bottom: 0;
+		width: 10px;
+		}
+		#left { left: 0; }
+		#right { right: 0; }
+		
+	#top, #bottom {
+		left: 0; right: 0;
+		height: 7px;
+		}
+		#top { top: 0; }
+		#bottom { bottom: 0; }
+.button {
+  -webkit-border-radius: 28;
+  -moz-border-radius: 28;
+  border-radius: 28px;
+  text-shadow: 1px 1px 3px #666666;
+  font-family: Arial;
+  color: #ffffff;
+  font-size: 13px;
+  background: #FFD700;
+  padding: 5px 20px 5px 20px;
+  border: solid #000000 2px;
+  text-decoration: none;
+}
+.button:hover {
+  color: #000000;
+  text-decoration: none;
+}
+
+#search {
+    width: 20em;  height: 2em;
+}
+

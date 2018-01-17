@@ -1,0 +1,8 @@
+
+RewriteEngine on
+RewriteCond %{HTTP_HOST} ^dashboard\.team1676\.com$ [OR]
+RewriteCond %{HTTP_HOST} ^www\.dashboard\.team1676\.com$
+RewriteCond %{REQUEST_URI} !^/[0-9]+\..+\.cpaneldcv$
+RewriteCond %{REQUEST_URI} !^/[A-F0-9]{32}\.txt(?:\ Comodo\ DCV)?$
+RewriteRule ^/?$ "http\:\/\/dashboard\.team1676\.com\/dashboard\.php" [R=301,L]
+
