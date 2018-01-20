@@ -1,0 +1,239 @@
+<?php
+/**
+* @file
+* Stores PIN numbers associated with user accounts, provides needed functions for creating, updaiting, verifying.
+*/
+
+/**
+ * Implements hook_permission().
+ */
+function user_pin_permission() {
+  return array(
+    'administer pin' => array(
+      'title' => t('Administer User Pin Module'),
+      'description' => t('Modify module settings and change any users PIN.'),
+      'restrict access' => TRUE,
+    ),
+    'change any pin' => array(
+      'title' => t('Change any user PIN'),
+      'description' => t('Change any users PIN.'),
+    ),
+    'change own pin' => array(
+      'title' => t('Change own user PIN'),
+      'description' => t('Change own PIN.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ *
+ * Page callbacks and arguments for submission form, view page, and
+ * admin form.
+ */
+function user_pin_menu() {
+  $items['admin/config/system/pin'] = array(
+    'title' => 'PIN',
+    'description' => 'PIN module settings page',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('user_pin_admin'),
+    'access arguments' => array('administer pin'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'user_pin.admin.inc',
+  );
+  $items['user/%user/pin'] = array(
+    'title' => 'PIN',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('user_pin_user_tab'),
+    'access arguments' => array(1),
+    'access callback' => 'user_pin_change_pin_permission',
+    'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+/**
+ * @param $uid - UserID of the PIN being changed
+ * @return bool - TRUE if current user has permission to change $UID PIN
+ * Custom function to check permissions to change pins
+ */
+function user_pin_change_pin_permission($uid) {
+  global $user;
+  if (($user->uid == $uid->uid && user_access('change own pin')) || user_access('change any pin') || user_access('administer pin')) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * @param $uid - UserID from URI identifying the user being viewed.
+ * @return array - Page Render Array
+ * Custom page callback function to display PIN change form.
+ */
+
+function user_pin_user_tab($uid) {
+  $userpageload = user_load(arg(1));
+  $uid = $userpageload->uid;
+  $form = array();
+  $active = array(0 => t('No'), 1 => t('Yes'));
+  if (user_pin_user_has_pin($uid)) {
+    $form['change_pin'] = array(
+        '#type' => 'radios',
+        '#title' => t('Change Current Pin'),
+        '#default_value' => 0,
+        '#options' => $active,
+        '#description' => t('Select "Yes" to change the current pin number'),
+    );
+  }
+  else {
+    $form['change_pin'] = array(
+        '#type' => 'hidden',
+        '#title' => t('Change Current Pin'),
+        '#default_value' => 1,
+        '#description' => t('Select "Yes" to change the current pin number'),
+    );
+  }
+
+  $form['user_pin'] = array(
+    '#type' => 'password',
+    '#title' => t('PIN Number'),
+    '#required' => TRUE,
+    '#size' => '10',
+    '#description' => t('A PIN Number must be at least 3 digits long.'),
+    '#states' => array(
+      'visible' => array(
+        ':input[name=change_pin]' => array('value' => 1),
+      ),
+    ),
+  );
+  $form['user_pin_confirm'] = array(
+      '#type' => 'password',
+      '#title' => t('Conform PIN Number'),
+      '#required' => TRUE,
+      '#size' => '10',
+      '#description' => t('Enter the same PIN again.'),
+      '#states' => array(
+          'visible' => array(
+              ':input[name=change_pin]' => array('value' => 1),
+          ),
+      ),
+  );
+  $form['pin_form_submit'] = array(
+    '#type' => 'submit',
+    '#value' => (user_pin_user_has_pin($uid)) ? 'Change Pin' : 'Set Pin',
+    '#weight' => 30,
+    '#states' => array(
+      'visible' => array(
+        ':input[name=change_pin]' => array('value' => 1),
+      ),
+    ),
+  );
+  return $form;
+}
+
+/**
+ * Implements hook_form_validate().
+ *
+ * Checks that submitted values fall with in required values.
+ */
+function user_pin_user_tab_validate($form, &$form_state) {
+  if (drupal_strlen($form_state['values']['user_pin']) < 3) {
+    form_set_error('user_pin', t('You must provide at least 3 digits for the PIN.'));
+  }
+  if ($form_state['values']['user_pin'] != $form_state['values']['user_pin_confirm']) {
+    form_set_error('user_pin', t('You must enter the same pin in both fields.'));
+  }
+  if (!is_numeric($form_state['values']['user_pin'])) {
+    form_set_error('user_pin', t('You may only use numbers in the PIN.'));
+  }
+  $bad_pins = array(012,0123,01234,123,1234,12345,4321,321,111,1111,222,
+      2222,333,3333,444,4444,555,5555,666,6666,777,7777,888,8888,999,9999,
+      000,0000);
+  if (in_array($form_state['values']['user_pin'], $bad_pins)) {
+    form_set_error('user_pin', t('You must provide a more secure PIN number.'));
+  }
+  //Provided a check that yes is selected to change PIN in case user has Java disabled
+  //and #states does not change the visiblity of the pin field and submit button.
+  if ($form_state['values']['change_pin'] != 1) {
+    form_set_error('user_pin', t('Select "Yes" to change your PIN.'));
+  }
+}
+
+/**
+ * Form submit callback for pin_user_tab.
+ *
+ * Modify's the user's pin in the database if passing validation.
+ */
+function user_pin_user_tab_submit($form, &$form_state) {
+  $pin = $form_state['values']['user_pin'];
+  $uid = arg(1);
+
+  if (user_pin_user_has_pin($uid)) {
+    $record = array(
+        $query = db_update('pin_users')
+            ->fields(array(
+                'pin' => user_pin_hash($pin),
+            ))
+            ->condition('uid', $uid, '='));
+    $caught_error = FALSE;
+    try {
+      $query->execute();
+    } catch (Exception $e) {
+      drupal_set_message(t('Database write failed. Message = %message, query= %query',
+          array(
+              '%message' => $e->getMessage(),
+              '%query' => $e->query_string,
+          )), 'error');
+      $caught_error = TRUE;
+    }
+    // Display a nice message on succses or failure.
+    if (!$caught_error) {
+      drupal_set_message(t('The PIN has been changed.'));
+    }
+    else {
+      drupal_set_message(t('PIN Not Changed!'), 'error');
+    }
+  }
+  else {
+    $record = array (
+        "uid" => $uid,
+        "pin" => user_pin_hash($pin),
+    );
+    drupal_write_record('pin_users', $record);
+  }
+}
+
+function user_pin_validate($uid, $pin) {
+  $account = user_load($uid);
+  if ($account && $account->status == 1) {
+    $select = db_select('pin_users', 'p');
+    $select->fields('p', array('uid', 'pin'));
+    $select->condition('uid', $uid);
+    $select->condition('pin', user_pin_hash($pin));
+    $select->range(0, 1);
+    // Check to make sure we actually have a query that found someone.
+    $num_rows = $select->countQuery()->execute()->fetchField();
+    $valid = ($num_rows > 0) ? TRUE : FALSE;
+    return $valid;
+  }
+  else{
+    watchdog('user_pin','Attempted pin access with invalid UID: %uid', array('%uid'=>$uid),WATCHDOG_NOTICE);
+    return false;
+  }
+}
+
+function user_pin_user_has_pin($uid){
+  $select = db_select('pin_users', 'p');
+  $select->fields('p', array('uid'));
+  $select->condition('uid', $uid);
+  $select->range(0, 1);
+  $num_rows = $select->countQuery()->execute()->fetchField();
+  $valid = ($num_rows > 0) ? TRUE : FALSE;
+  return $valid;
+}
+
+function user_pin_hash($pin){
+  return hash('sha256', $pin);
+}

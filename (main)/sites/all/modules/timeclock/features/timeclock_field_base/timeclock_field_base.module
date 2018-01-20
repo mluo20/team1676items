@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the timeclock field base feature.
+ */
+
+include_once 'timeclock_field_base.features.inc';

@@ -1,0 +1,21 @@
+name = Timeclock Departments
+description = Provides the default department taxonomy
+core = 7.x
+package = Timeclock
+version = 7.x-1.0-beta1
+dependencies[] = ctools
+dependencies[] = features
+dependencies[] = number
+dependencies[] = strongarm
+dependencies[] = taxonomy
+dependencies[] = timeclock_field_base
+features[ctools][] = strongarm:strongarm:1
+features[features_api][] = api:2
+features[taxonomy][] = department
+
+; Information added by Drupal.org packaging script on 2017-11-06
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "timeclock"
+datestamp = "1510005489"
+

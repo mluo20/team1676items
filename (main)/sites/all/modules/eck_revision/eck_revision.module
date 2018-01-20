@@ -1,0 +1,521 @@
+<?php
+
+/**
+ * @file
+ * ECK Revision module.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory() to let the system know
+ * where our property_behavior plugins are.
+ */
+function eck_revision_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'eck' && $plugin_type == 'property_behavior') {
+    return 'plugins/property_behavior';
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function eck_revision_permission() {
+
+  module_load_include('inc', 'eck', 'eck.entity_type');
+  module_load_include('inc', 'eck', 'eck.bundle');
+
+  $perms = array();
+
+  foreach (EntityType::loadAll() as $entity_type) {
+    $entity_type_info = entity_get_info($entity_type->name);
+
+    // Verify if revision are enabled.
+    if (isset($entity_type_info['revision table']) && !empty($entity_type_info['revision table'])) {
+
+      $perms["eck view {$entity_type->name} entity revisions"] = array(
+        'title' => t("View {$entity_type->label} entity revisions"),
+      );
+
+      $perms["eck revert {$entity_type->name} entity revisions"] = array(
+        'title' => t("Revert {$entity_type->label} entity revisions"),
+      );
+
+      $perms["eck delete {$entity_type->name} entity revisions"] = array(
+        'title' => t("Delete {$entity_type->label} entity revisions"),
+      );
+
+      foreach (Bundle::loadByEntityType($entity_type) as $bundle) {
+        $perms["eck view {$entity_type->name} {$bundle->name} entity revisions"] = array(
+          'title' => t("View {$entity_type->label} {$bundle->label} entity revisions"),
+        );
+
+        $perms["eck revert {$entity_type->name} {$bundle->name} entity revisions"] = array(
+          'title' => t("Revert {$entity_type->label} {$bundle->label} entity revisions"),
+        );
+
+        $perms["eck delete {$entity_type->name} {$bundle->name} entity revisions"] = array(
+          'title' => t("Delete {$entity_type->label} {$bundle->label} entity revisions"),
+        );
+      }
+
+    }
+  }
+
+  return $perms;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function eck_revision_menu() {
+
+  module_load_include('inc', 'eck', 'eck.entity_type');
+  module_load_include('inc', 'eck', 'eck.bundle');
+
+  $items = array();
+
+  foreach (EntityType::loadAll() as $entity_type) {
+    $entity_type_info = entity_get_info($entity_type->name);
+
+    // Verify if revision are enabled.
+    if (isset($entity_type_info['revision table']) && !empty($entity_type_info['revision table'])) {
+      foreach (Bundle::loadByEntityType($entity_type) as $bundle) {
+        $crud_info = get_bundle_crud_info($entity_type->name, $bundle->name);
+        if (isset($crud_info['view']) && !empty($crud_info['view'])) {
+          $info = $crud_info['view'];
+          $arg_ref = (isset($info['entity_id'])) ? $info['entity_id'] : 2;
+
+          $items[$info['path'] . '/revisions'] = array(
+            'title' => 'Revisions',
+            'page callback' => 'eck_revision_revision_overview',
+            'page arguments' => array($entity_type->name, $arg_ref),
+            'access callback' => '_eck_revision_revision_access',
+            'access arguments' => array('view', $entity_type->name, $bundle->name),
+            'weight' => 2,
+            'type' => MENU_LOCAL_TASK,
+            'file' => 'eck_revision.pages.inc',
+          );
+
+          $items[$info['path'] . '/revisions/%/view'] = array(
+            'title' => 'Revisions',
+            'page callback' => 'eck_revision_revision_view',
+            'page arguments' => array($entity_type->name, ($arg_ref+2)),
+            'access callback' => '_eck_revision_revision_access',
+            'access arguments' => array('view', $entity_type->name, $bundle->name),
+          );
+
+          $items[$info['path'] . '/revisions/%/revert'] = array(
+            'title' => 'Revert to earlier revision',
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('eck_revision_revision_revert_confirm', $entity_type->name, $arg_ref, ($arg_ref+2)),
+            'access callback' => '_eck_revision_revision_access',
+            'access arguments' => array('update', $entity_type->name, $bundle->name),
+            'file' => 'eck_revision.pages.inc',
+          );
+
+          $items[$info['path'] . '/revisions/%/delete'] = array(
+            'title' => 'Delete earlier revision',
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('eck_revision_revision_delete_confirm', $entity_type->name, $arg_ref, ($arg_ref+2)),
+            'access callback' => '_eck_revision_revision_access',
+            'access arguments' => array('delete', $entity_type->name, $bundle->name),
+            'file' => 'eck_revision.pages.inc',
+          );
+
+        }
+      }
+    }
+  }
+
+  return $items;
+}
+
+/**
+ * Access function for revisions.
+ */
+function _eck_revision_revision_access($op, $entity_type, $bundle_name) {
+  switch ($op) {
+    case 'view':
+      if (
+        user_access("eck view {$entity_type} entity revisions") ||
+        user_access("eck view {$entity_type} {$bundle_name} entity revisions")
+      ) {
+        return TRUE;
+      }
+      break;
+
+    case 'update':
+      if (
+        user_access("eck revert {$entity_type} entity revisions") ||
+        user_access("eck revert {$entity_type} {$bundle_name} entity revisions")
+      ) {
+        return TRUE;
+      }
+      break;
+
+    case 'delete':
+      if (
+        user_access("eck delete {$entity_type} entity revisions") ||
+        user_access("eck delete {$entity_type} {$bundle_name} entity revisions")
+      ) {
+        return TRUE;
+      }
+      break;
+  }
+
+  return FALSE;
+}
+
+/**
+ * Implements hook_eck_default_properties().
+ */
+function eck_revision_eck_default_properties() {
+  $default_properties = array();
+
+  $default_properties['revision_id'] = array(
+    'label' => 'Revision',
+    'type' => 'positive_integer',
+    'behavior' => 'revision'
+  );
+
+  return $default_properties;
+}
+
+/**
+ * Returns a list of all the existing revision numbers.
+ *
+ * @param $entity_type
+ *   The entity type name.
+ * @param $entity
+ *   The entity object.
+ *
+ * @return
+ *   An associative array keyed by entity revision number.
+ */
+function eck_revision_entity_revision_list($entity_type, $entity) {
+  $revisions = array();
+  $query = db_select("eck_{$entity_type}_revision", 'e');
+  $query->fields('e');
+  $query->condition('e.id', $entity->id, '=');
+  $result = $query->execute();
+  foreach ($result as $revision) {
+    $revisions[$revision->revision_id] = $revision;
+  }
+  return $revisions;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function eck_revision_form_eck__properties__form_alter(&$form, &$form_state) {
+  // Remove revision behavior in order to not have multiple revision tables.
+  if (isset($form['property_behavior']['#options']['revision'])) {
+    unset($form['property_behavior']['#options']['revision']);
+  }
+
+  $form['ori_entity_type'] = array(
+    '#type' => 'value',
+    '#value' => clone $form['entity_type']['#value'],
+  );
+
+  // Revision property is not found, so the submit callback must be place second
+  // in order to add the revision property.
+  if (!array_key_exists('revision_id', $form['entity_type']['#value']->properties)) {
+    $form['#submit'][] = 'eck_revision_form_eck__properties__form_submit';
+  }
+  // Revision property is found and the submit callback must be place first
+  // in order to delete the revision before the property.
+  else {
+    array_unshift($form['#submit'], 'eck_revision_form_eck__properties__form_submit');
+  }
+}
+
+/**
+ * Get list of database tables for fields per bundles.
+ */
+function eck_revision_db_field_table_list($entity_type) {
+  $field_tables = array();
+
+  $fields = field_info_instances($entity_type);
+  foreach ($fields as $bundle_name => $bundle_fields) {
+    foreach ($bundle_fields as $field) {
+      $field_tables[$bundle_name][] = "field_data_{$field['field_name']}";
+      $field_tables[$bundle_name][] = "field_revision_{$field['field_name']}";
+    }
+  }
+
+  return $field_tables;
+}
+
+function eck_revision_form_eck__properties__form_submit(&$form, &$form_state) {
+
+  if ($form_state['values']['op'] <> t('Save')) {
+    return;
+  }
+
+  $ori_entity_type = $form_state['values']['ori_entity_type'];
+  $ori_entity_type_properties = $ori_entity_type->properties;
+
+  foreach ($form_state['values']['new_properties_table'] as $property => $active) {
+    if ($property == 'revision_id') {
+      // Property is enable.
+      if ($active) {
+        // Verify if property has just been activated or not.
+        if (!array_key_exists($property, $ori_entity_type_properties)) {
+          $field_tables = eck_revision_db_field_table_list($ori_entity_type->name);
+          $operations = array();
+          $i = 0;
+
+          $query = db_select("eck_" . $ori_entity_type->name, 'e');
+          $query->fields('e');
+          $result = $query->execute();
+          while ($record = $result->fetchObject()) {
+            $i++;
+            $operations[] = array(
+              'eck_revision_batch_operation_create_entity_revisions',
+              array(
+                $ori_entity_type->name,
+                $record,
+                $field_tables,
+                t('(Operation @operation)', array('@operation' => $i)),
+              ),
+            );
+          }
+
+          $batch = array(
+            'operations' => $operations,
+            'finished' => 'eck_revision_batch_operation_finished_add',
+          );
+          batch_set($batch);
+        }
+      }
+      // Property is disable.
+      else {
+        // Verify if property has just been deactivated or not.
+        if (array_key_exists($property, $ori_entity_type_properties)) {
+          $field_tables = eck_revision_db_field_table_list($ori_entity_type->name);
+          $operations = array();
+          $i = 0;
+          $_SESSION['eck_revision_entity_type'] = $ori_entity_type->name;
+          $query = db_select("eck_" . $ori_entity_type->name, 'e');
+          $query->fields('e');
+          $result = $query->execute();
+          while ($record = $result->fetchObject()) {
+            $i++;
+            $operations[] = array(
+              'eck_revision_batch_operation_delete_entity_revisions',
+              array(
+                $ori_entity_type->name,
+                $record,
+                $field_tables,
+                t('(Operation @operation)', array('@operation' => $i)),
+              ),
+            );
+          }
+
+          $batch = array(
+            'operations' => $operations,
+            'finished' => 'eck_revision_batch_operation_finished_delete',
+          );
+          batch_set($batch);
+        }
+      }
+    }
+  }
+
+}
+
+function eck_revision_batch_operation_create_entity_revisions($entity_type, $entity, $field_tables, $operation_details, &$context) {
+
+  // Get the entity label.
+  $title = $entity->title;
+
+  // Remove revision_id field because it will get populated
+  // when adding the record to the database.
+  unset($entity->revision_id);
+  // Copy base table data to revision table.
+  drupal_write_record("eck_" . $entity_type . "_revision", $entity);
+  // Set the revision id to the base table entry.
+  if (drupal_write_record("eck_" . $entity_type, $entity, 'id')) {
+    // Make sure the $entity->revision_id has been set before looping.
+
+    // Set new revision ID every fields of this entity.
+    foreach ($field_tables[$entity->type] as $table) {
+      $num_update = db_update($table)
+        ->fields(array(
+          'revision_id' => $entity->revision_id,
+        ))
+        ->condition('entity_type', $entity_type, '=')
+        ->condition('bundle', $entity->type, '=')
+        ->condition('entity_id', $entity->id, '=')
+        ->condition('revision_id', $entity->id, '=')
+        ->execute();
+    }
+  }
+
+  // Set batch data.
+  $context['results'][] = $entity->id . ' : ' . check_plain($title);
+  $context['message'] = t('Creating revision data for "@title"', array('@title' => $title)) . ' ' . $operation_details;
+}
+
+function eck_revision_batch_operation_delete_entity_revisions($entity_type, $entity, $field_tables, $operation_details, &$context) {
+
+  // Get the entity label.
+  $title = $entity->title;
+
+  // Delete every revision ID of every fields of this entity.
+  $revisions = eck_revision_entity_revision_list($entity_type, $entity);
+  foreach ($revisions as $revision) {
+    $result = entity_revision_delete($entity_type, $revision->revision_id);
+  }
+
+  // Set new revision ID every fields of this entity.
+  foreach ($field_tables[$entity->type] as $table) {
+    $num_update = db_update($table)
+      ->fields(array(
+        'revision_id' => $entity->id,
+      ))
+      ->condition('entity_type', $entity_type, '=')
+      ->condition('bundle', $entity->type, '=')
+      ->condition('entity_id', $entity->id, '=')
+      ->execute();
+  }
+
+  // Set batch data.
+  $context['results'][] = $entity->id . ' : ' . check_plain($title);
+  $context['message'] = t('Deleting revisions data for "@title"', array('@title' => $title)) . ' ' . $operation_details;
+}
+
+function eck_revision_batch_operation_finished($success, $results, $operations) {
+  if ($success) {
+    drupal_set_message(t('@count entities processed.', array('@count' => count($results))));
+  }
+  else {
+    // An error occurred.
+    // $operations contains the operations that remained unprocessed.
+    $error_operation = reset($operations);
+    drupal_set_message(
+      t('An error occurred while processing @operation with arguments : @args',
+        array(
+          '@operation' => $error_operation[0],
+          '@args' => print_r($error_operation[0], TRUE),
+        )
+      )
+    );
+  }
+}
+
+function eck_revision_batch_operation_finished_add($success, $results, $operations) {
+  eck_revision_batch_operation_finished($success, $results, $operations);
+  // Clear Cache
+  drupal_flush_all_caches();
+}
+
+function eck_revision_batch_operation_finished_delete($success, $results, $operations) {
+  eck_revision_batch_operation_finished($success, $results, $operations);
+
+  // Drop revision table
+  db_drop_table("eck_{$_SESSION['eck_revision_entity_type']}_revision");
+  unset($_SESSION['eck_revision_entity_type']);
+  // Clear Cache
+  drupal_flush_all_caches();
+}
+
+
+
+/**
+ * Returns the schema for the revision table.
+ */
+function eck_revision__entity_type__schema($entity_type, $property = 'revision_id') {
+  $schema = eck__entity_type__schema($entity_type);
+  $fields = $schema['fields'];
+
+  $schema['description'] = "The revision table for a(n) {$entity_type->name}.";
+  $schema['primary key'] = array($property);
+
+  // Reorder fields
+  $schema['fields'] = array();
+
+  $schema['fields'][$property] = $fields[$property];
+  $schema['fields'][$property]['type'] = 'serial';
+  $schema['fields'][$property]['description'] = "The primary identifier for a(n) {$entity_type->name}.";
+  // Remove default value and remove it from fields array since it has already been set.
+  unset($schema['fields'][$property]['default'], $fields[$property]);
+
+  foreach ($fields as $key => $value) {
+    $schema['fields'][$key] = $value;
+  }
+
+  $schema['fields']['id']['type'] = 'int';
+  $schema['fields']['id']['unsigned'] = TRUE;
+  $schema['fields']['id']['description'] = 'The {entity} this revision belongs to.';
+
+  $schema['fields']['revision_log'] = array(
+    'description' => 'The log entry explaining the changes in this revision.',
+    'type' => 'text',
+    'not null' => FALSE,
+    'size' => 'big',
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_eck_entity_type_delete().
+ *
+ * Delete the revision table if a revision table has been defined.
+ */
+function eck_revision_eck_entity_type_delete($entity_type) {
+  // Load entity info.
+  $entity_info = entity_get_info($entity_type->name);
+
+  // Verify if revision table exists.
+  if (isset($entity_info['revision table']) && !empty($entity_info['revision table'])) {
+    db_drop_table($entity_info['revision table']);
+  }
+}
+
+/**
+ * Converts reference path to real path.
+ */
+function eck_revision_get_real_path($path = array(), $entity = NULL) {
+
+  $path = eck_revision_clean_path($path);
+  $path_args = explode("/", $path);
+  $key = array_search("%", $path_args);
+
+  if (!empty($key)) {
+    $path_args[$key] = !isset($entity) ? "%" : $entity->id;
+  }
+
+  return implode("/", $path_args);
+}
+
+/**
+ * Clean Path
+ * Replace any %argument with % in path.
+ */
+function eck_revision_clean_path($path) {
+  $paths = explode("/", $path);
+  foreach ($paths as $key => $path) {
+    if (strlen($path) > 1 && preg_match('/%/', $path)) {
+      $paths[$key] = "%";
+    }
+  }
+  return implode("/", $paths);
+}
+
+/**
+ * entity_view helpper function for revisions.
+ */
+function eck_revision_revision_view($entity_type, $revision_id) {
+
+  // Load entity
+  $revision = entity_revision_load($entity_type, array($revision_id));
+
+  if (empty($revision)) {
+    drupal_not_found();
+  }
+
+  drupal_set_title(t('Revision %num of %title', array('%title' => entity_label($entity_type, $revision), '%num' => $revision_id)), PASS_THROUGH);
+  return entity_view($entity_type, array($revision));
+}

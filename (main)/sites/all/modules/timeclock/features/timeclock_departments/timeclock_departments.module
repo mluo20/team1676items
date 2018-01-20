@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Timeclock Departments feature.
+ */
+
+include_once 'timeclock_departments.features.inc';

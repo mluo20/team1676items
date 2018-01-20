@@ -1,0 +1,45 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for User PIN module.
+ */
+
+/**
+ * Implements hook_install().
+ *
+ */
+function user_pin_install() {
+}
+
+/**
+ * Implements hook_schema().
+ */
+function user_pin_schema() {
+  $schema['pin_users'] = array(
+    'description' => 'Reference table for Drupal UIDs to PIN numbers.',
+    'fields' => array(
+      'uid' => array(
+        'type' => 'int',
+        'size' => 'normal',
+        'not null' => TRUE,
+        'description' => 'Drupal user ID',
+      ),
+      'pin' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'description' => 'Hashed User Pin number',
+      ),
+    ),
+    'primary key' => array('uid'),
+  );
+  return $schema;
+}
+
+/**
+ * Implements hook_uninstall().
+ *
+ * Get rid of all the variables on uninstall.
+ */
+function user_pin_uninstall() {
+}

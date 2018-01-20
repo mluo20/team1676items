@@ -1,0 +1,21 @@
+name = TimeClock
+description = Provides TimeClock Functionality. This module must be paired with additional sub-modules, for the actual data collection. Employees are Drupal users, timeclock punches are relating to the user.
+package = TimeClock
+core = 7.x
+files[] = timeclock_handler_filter_payperiods.inc
+
+dependencies[] = date:date_api
+dependencies[] = date:date_views
+dependencies[] = date:date_popup
+dependencies[] = eck
+dependencies[] = eck_revision
+dependencies[] = user_pin
+dependencies[] = views_bulk_operations
+dependencies[] = timeclock:timeclock_eck_entities
+dependencies[] = timeclock:timeclock_field_base
+; Information added by Drupal.org packaging script on 2017-11-06
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "timeclock"
+datestamp = "1510005489"
+

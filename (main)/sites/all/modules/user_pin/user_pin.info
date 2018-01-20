@@ -1,0 +1,9 @@
+name = User Pin
+description = Stores PIN numbers associated with user accounts, provides needed functions for creating, updaiting, verifying.
+core = 7.x
+; Information added by Drupal.org packaging script on 2017-11-06
+version = "7.x-1.0-beta2"
+core = "7.x"
+project = "user_pin"
+datestamp = "1509980451"
+

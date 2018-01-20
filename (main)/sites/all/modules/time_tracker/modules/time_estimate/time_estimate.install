@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * @file
+ * Installation hooks for time_estimate.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function time_estimate_install() {
+  $field = array(
+    'field_name' => 'time_estimate',
+    'type' => 'number_float',
+    'cardinality' => 1,
+  );
+
+  field_create_field($field);
+}

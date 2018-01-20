@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the timeclock_eck_entities feature.
+ */
+
+include_once 'timeclock_eck_entities.features.inc';

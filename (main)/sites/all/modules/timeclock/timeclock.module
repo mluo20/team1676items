@@ -1,0 +1,1265 @@
+<?php
+/**
+ * @file
+ * Module file for timeclock.
+ */
+
+
+/**
+ * Implements hook_menu().
+ *
+ */
+function timeclock_menu() {
+  $items['admin/config/system/timeclock'] = array(
+    'title' => 'Timeclock',
+    'description' => 'TimeClock Payroll interface settings page',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('timeclock_admin'),
+    'access arguments' => array('admin timeclock'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'timeclock.admin.inc',
+  );
+  $items['user/%user/timesheet'] = array(
+      'title' => 'Timesheet',
+      'page callback' => 'timeclock_timesheet_view',
+      'access arguments' => array(1),
+      'access callback' => 'timeclock_timesheet_view_access',
+      'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+function timeclock_timesheet_view()
+{
+  $request = explode('/', request_path());
+  global $user;
+  if (user_access('view timeclock punches') || (user_access('view own timeclock punches') && $request[1] == $user->uid)) {
+    $view = views_get_view('timesheet', 'default');
+      if (user_access('mark punches approved')) {
+          $view->set_display('page_1');
+      } else {
+          $view->set_display('Default');
+      }
+    $view->override_path = $_GET['q'];
+    $view->execute();
+    $viewsoutput = $view->preview();
+    if (user_access('eck add punch punch entities')) {
+        $url = '/admin/structure/entity-type/punch/punch/add/'.$request[1];
+        $link = l('Add Punch',$url,array('query' => array('destination' => $_GET['q'])));
+        return "<span>".(!empty($link)? $link : '')."</span>".$viewsoutput;
+    } else {
+        return $viewsoutput;
+    }
+  } else {
+    drupal_access_denied();
+  }
+}
+
+  function timeclock_views_query_alter(&$view, &$query){
+    if ($view->name == 'recent_punches' && ($view->current_display == 'page_3' || $view->current_display == 'page_1' || $view->current_display == 'page_4') && is_null($view->exposed_raw_input)) {
+      $dates = timeclock_current_payperiod();
+      $start = gmdate('Y-m-d',$dates['current']);
+      $endtime = strtotime("$start +13 days");
+      $end = gmdate('Y-m-d', $endtime);
+      $query->where[1]['conditions'][1]['value'][':eck_punch_date_filter'] = $start;
+      $query->where[1]['conditions'][1]['value'][':eck_punch_date_filter1'] = $end;
+      drupal_set_message(t('Default view set to current pay period.'));
+    }
+    if ($view->name == 'recent_punches' && $view->current_display == 'block') {
+      $dates = timeclock_current_payperiod();
+      $start = gmdate('Y-m-d',$dates['current']);
+      $endtime = strtotime("$start +13 days");
+      $end = gmdate('Y-m-d', $endtime);
+      $query->where[1]['conditions'][1]['value'][':eck_punch_date_filter'] = $start;
+      $query->where[1]['conditions'][1]['value'][':eck_punch_date_filter1'] = $end;
+      global $user;
+      //$departments = timeclock_exceptions_get_user_supervised_departments($user->uid);
+        $departments = [];
+      $i = 0;
+      foreach ($departments as $tid)
+      {
+        $query->where[2]['conditions'][$i]['value'] = $tid;
+        $query->where[2]['conditions'][$i]['field'] = 'taxonomy_term_data_field_data_field_department.tid';
+        $query->where[2]['conditions'][$i]['operator'] = '=';
+        $i++;
+      }
+    }
+    if ($view->name == 'clocked_in_users' && $view->current_display == 'block_1') {
+      global $user;
+      //$departments = timeclock_exceptions_get_user_supervised_departments($user->uid);
+        $departments = [];
+      $i = 0;
+      foreach ($departments as $tid)
+      {
+        $query->where[2]['conditions'][$i]['value'] = $tid;
+        $query->where[2]['conditions'][$i]['field'] = 'eck_job_field_data_field_job__field_data_field_department.field_department_tid';
+        $query->where[2]['conditions'][$i]['operator'] = '=';
+        $i++;
+      }
+    }
+
+  }
+
+function timeclock_views_pre_build(&$view) {
+  if ($view->name == 'recent_punches' && ($view->current_display == 'page_3' || $view->current_display == 'page_1'|| $view->current_display == 'page_4') && empty($view->exposed_raw_input)) {
+    $periods = timeclock_current_payperiod();
+    $view->filter['date_filter_1']->value['min'] = date('Y-m-d', $periods['current']);
+    $view->filter['date_filter_1']->value['max'] = date('Y-m-d', $periods['next']);
+  }
+}
+
+function timeclock_timesheet_view_access($arg1) {
+  if (user_access('view timeclock punches') || user_access('view own timeclock punches')){
+    return true;
+  }
+  else {
+    return false;
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function timeclock_permission() {
+  return array(
+    // Permission to allow a role to record a punch.
+    'timeclock punch' => array(
+      'title' => t('Submit Timeclock Punches'),
+      'description' => t('Allow users to record a punch in or out.'),
+    ),
+    // Permission to allow a role to view punches, for managers.
+    'view timeclock punches' => array(
+      'title' => t('View timeclock punches'),
+      'description' => t('Allow users to view punches recorded'),
+    ),
+    // Permission to allow a role to view punches, for managers.
+    'view own timeclock punches' => array(
+      'title' => t('View own timeclock punches'),
+      'description' => t('Allow users to view own punches recorded'),
+    ),
+    // Permission to allow a role to view punches, for managers.
+    'edit timeclock punches' => array(
+      'title' => t('Edit timeclock punches'),
+      'description' => t('Allow users to edit punches recorded'),
+    ),
+    // Permission to allow a role to view punches, for managers.
+    'edit own timeclock punches' => array(
+      'title' => t('Edit own timeclock punches'),
+      'description' => t('Allow users to edit own punches recorded'),
+    ),
+    // Permission to allow a role to change pins, for managers.
+    'timeclock restrict edit' => array(
+      'title' => t('Restrict Users from Editing Punches'),
+      'description' => t('Roles with this permission will LOOSE permissions! They will get access denied when tying to edit a punch.'),
+    ),
+    // Permission to allow a role to set time clock settings.
+    'admin timeclock' => array(
+      'title' => t('Administer TimeClock'),
+      'description' => t('Allow users to administer timeclock settings'),
+    ),
+    //Allow user to edit a punch that has been approved
+    'edit approved punches' => array(
+      'title' => t('Edit Approved punches'),
+      'description' => t('Allow authorized users to perform edits on approved punches.'),
+    ),
+    //allow a user to approve a punch
+    'mark punches approved' => array(
+      'title' => t('Mark punches as approved'),
+      'description' => t('Allow authorized users to approve punches.'),
+    ),
+    //Allow a user to mark their own punches as approved (Pay themselves?)
+    'mark own punches approved' => array(
+      'title' => t('Mark own punches as approved'),
+      'description' => t('Allow authorized users to approve own punches.'),
+    ),
+    //edit their own punches after they have been approved.
+    'edit own approved punches' => array(
+      'title' => t('Edit own punches after marked as approved'),
+      'description' => t('Allow a user to edit their own punch after it has been approved.'),
+    ),
+  );
+}
+
+function timeclock_block_info() {
+  $blocks['timeclock_web_punch'] = array(
+    'info' => t('Time Clock'),
+    'status' => TRUE,
+    'region' => 'sidebar_first',
+  );
+  $blocks['timeclock_default_dates'] = array(
+    'info' => t('Date Selector'),
+    'status' => TRUE,
+    'region' => 'sidebar_first',
+  );
+  return $blocks;
+}
+
+function timeclock_block_view($delta = '') {
+  // The $delta parameter tells us which block is being requested.
+  switch ($delta) {
+    case 'timeclock_web_punch':
+      $block['subject'] = t('Time Clock');
+      $block['content'] = drupal_get_form('timeclock_punch_form');
+      break;
+    case 'timeclock_default_dates':
+      $block['subject'] = t('Default Date Selector');
+      $block['content'] = drupal_get_form('timeclock_date_selector_form');
+      break;
+
+  }
+  return $block;
+}
+
+function timeclock_date_selector_form(){
+  $dates = timeclock_current_payperiod();
+  $start = gmdate('M d Y',$dates['current']);
+  $endtime = strtotime("$start +13 days");
+  $format = 'M d Y';
+  $form['#tree'] = TRUE;
+  $form['dates_fieldset'] = array(
+    '#type' => 'fieldset',
+    '#prefix' => '<div id="dates-fieldset-wrapper">',
+    '#suffix' => '</div>',
+  );
+  $form['dates_fieldset']['date1'] = array(
+    '#type' => 'date_popup', // types 'date_text' and 'date_timezone' are also supported. See .inc file.
+    '#title' => t('Start'),
+    '#default_value' => (isset($_SESSION['timeclock_default_date_start'])?gmdate('Y-m-d 00:00:00',$_SESSION['timeclock_default_date_start']):gmdate('Y-m-d 00:00:00',$dates['current'])),
+    '#date_format' => $format,
+    '#date_label_position' => 'none', // See other available attributes and what they do in date_api_elements.inc
+    '#date_year_range' => '-10:+0', // Optional, used to set the year range (back 3 years and forward 3 years is the default).
+  );
+  $form['dates_fieldset']['date2'] = array(
+    '#type' => 'date_popup', // types 'date_text' and 'date_timezone' are also supported. See .inc file.
+    '#title' => t('End'),
+    '#default_value' => (isset($_SESSION['timeclock_default_date_end'])?gmdate('Y-m-d 23:59:59',$_SESSION['timeclock_default_date_end']):gmdate('Y-m-d 23:59:59',$endtime)),
+    '#date_format' => $format,
+    '#date_label_position' => 'none', // See other available attributes and what they do in date_api_elements.inc
+    '#date_year_range' => '-10:+0', // Optional, used to set the year range (back 3 years and forward 3 years is the default).
+  );
+  $form['dates_fieldset']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Set',
+  );
+  $form['reset_fieldset'] = array(
+    '#type' => 'fieldset',
+    '#prefix' => '<div id="reset-fieldset-wrapper">',
+    '#suffix' => '</div>',
+  );
+  $form['reset_fieldset']['current'] = array(
+    '#type' =>'submit',
+    '#value' => t('Current'),
+    '#submit' => array('timeclock_date_selector_form_current_submit'),
+  );
+  $form['reset_fieldset']['previous'] = array(
+    '#type' =>'submit',
+    '#value' => t('Previous'),
+    '#submit' => array('timeclock_date_selector_form_previous_submit'),
+  );
+  return $form;
+}
+
+function timeclock_date_selector_form_current_submit(){
+  $dates = timeclock_current_payperiod();
+  $start = gmdate('M d Y',$dates['current']);
+  $endtime = strtotime("$start +13 days");
+  $_SESSION['timeclock_default_date_start'] = $dates['current'];
+  $_SESSION['timeclock_default_date_end'] = $endtime;
+}
+
+function timeclock_date_selector_form_previous_submit(){
+  $dates = timeclock_current_payperiod();
+  $start = gmdate('M d Y',$dates['previous']);
+  $endtime = strtotime("$start +13 days");
+  $_SESSION['timeclock_default_date_start'] = $dates['previous'];
+  $_SESSION['timeclock_default_date_end'] = $endtime;
+}
+
+
+function timeclock_date_selector_form_validate($form, &$form_state) {
+  $start = strtotime($form_state['values']['dates_fieldset']['date1']);
+  $end = strtotime($form_state['values']['dates_fieldset']['date2']);
+  if (empty($form_state['values']['dates_fieldset']['date1'])){
+    form_set_error('date1', 'A value is required for the start date.');
+  }
+  if (empty($form_state['values']['dates_fieldset']['date2'])){
+    form_set_error('date2', 'A value is required for the end date.');
+  }
+  if ($start > $end) {
+    form_set_error('date2', 'Start date must be before the end date.');
+  }
+}
+function timeclock_date_selector_form_submit($form, &$form_state) {
+  if ($form_state['values']['dates_fieldset']['submit'] == 'Set') {
+    $_SESSION['timeclock_default_date_start'] = strtotime($form_state['values']['dates_fieldset']['date1']);
+    $_SESSION['timeclock_default_date_end'] = strtotime($form_state['values']['dates_fieldset']['date2']);
+  }
+}
+
+function timeclock_action_info(){
+  return array(
+    'timeclock_payroll_approval_approve' => array(
+      'type' => 'punch',
+      'label' => t('Approve for Payroll'),
+      'behavior' => array('changes_property'),
+      'configurable' => FALSE,
+      'vbo_configurable' => false,
+      'triggers' => array('any'),
+    ),
+  );
+}
+
+function timeclock_payroll_approval_approve_form($options) {
+  //this function not used because vbo_configurable = false
+  $form = array();
+  $form['approval_information'] = array(
+    '#markup' => t('Your are about approve the following punches to be paid.'),
+  );
+  $items = array();
+  foreach ($options['view']->result as $result){
+    $items[] = 'Punch ID: '. l($result->id,'punch/punch/'.$result->id). ' Length: <strong>' . $result->field_field_length[0]['rendered']['#markup'].'</strong>';
+  }
+  dsm($options['view']);
+  $form['approval_list'] = array(
+    '#items' => $items,
+    '#theme' => 'item_list',
+  );
+  return $form;
+}
+
+function timeclock_payroll_approval_approve_submit($form, $form_state){
+  $return = array();
+  return $return; //Note, return value here must be an array.
+}
+
+function timeclock_payroll_approval_approve(&$node, $context) {
+  global $user;
+  $entity_type = 'punch';
+  $entity = entity_load_single($entity_type, $node->id);
+  $flag = flag_get_flag('flag');
+  $departments = timeclock_get_user_supervised_departments($user->uid);
+  $job = entity_load('job', array($entity->field_job['und'][0]['target_id']));
+  $department = $job[$entity->field_job['und'][0]['target_id']]->field_department['und'][0]['tid'];
+  $in = (isset($entity->field_in['und'][0]['value'])?$entity->field_in['und'][0]['value']:0);
+  $out = (isset($entity->field_out['und'][0]['value'])?$entity->field_out['und'][0]['value']:0);
+
+  // If timeclock_exceptions module is enabled ensure there are no exceptions for the current punch.
+  if (module_exists('timeclock_exceptions') && timeclock_exceptions_check_open($node->id)){
+    drupal_set_message(t('Can not approve punches that have uncleared exceptions. Punch ID: !id ', array('!id' => l($node->id, '/punch/punch/'.$node->id))), 'warning');
+    return;
+  }
+
+  if (user_access('mark punches approved') &&
+    $out >= $in &&
+    in_array($department, $departments) &&
+    $user->uid != $entity->field_employee['und'][0]['target_id'] &&
+    $flag->get_count($node->id) == 0 ) {
+    $entity->revision = 1;
+    $entity->uid = $user->uid;
+    $entity->revision_log = 'Punch approved for payroll on ' . date('c') .  '. By user: ' . $user->uid;
+    $wrapper = entity_metadata_wrapper($entity_type, $entity);
+    $wrapper->field_payroll_approval = 1;
+  }
+  elseif (user_access('mark punches approved') && $in > $out){
+    drupal_set_message(t('Can not approve punches that do not have a start and end time. Punch: !id ', array('!id' => l($node->id, '/punch/punch/'.$node->id))), 'warning');
+  }
+  elseif (user_access('mark punches approved') &&
+    $user->uid != $entity->field_employee['und'][0]['target_id'] &&
+    $flag->get_count($node->id) > 0){
+    drupal_set_message(t('Can not approve flagged punches: %id ', array('%id' => $node->id)), 'warning');
+  }
+  else {
+    drupal_set_message(t('Insufficient privileges to modify punch ID: %id ', array('%id' => $node->id)), 'error');
+  }
+}
+
+function timeclock_punch_form() {
+global $user;
+  $uid = $user->uid;
+  if (!user_is_anonymous() && timeclock_user_status($uid)) {
+    $status_action = t('Clock Out');
+    $form['eid'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Employee ID'),
+      '#default_value' => ($uid > 0) ? $uid : NULL,
+      '#required' => TRUE,
+      '#disabled' =>  ($uid > 0) ? TRUE : FALSE,
+      //'#hidden' =>  ($uid > 0) ? TRUE : FALSE,
+      '#size' => '10',
+    );
+    $form['pin'] = array(
+      '#type' => ($uid == 0) ? 'password' : NULL,
+      '#title' => t('Pin'),
+      '#required' => ($uid == 0) ? TRUE : FALSE,
+      '#size' => '10',
+    );
+    $form['jid'] = array(
+      '#type' => 'hidden',
+      '#title' => t('Job/Client ID'),
+      '#description' => t('Enter the ID number of the job you are clocking into or leave blank if unknown.'),
+      '#size' => '10',
+      '#required' => FALSE,
+    );
+    $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => $status_action,
+    );
+  }
+  elseif(!user_is_anonymous() && !timeclock_user_status($uid)) {
+    $status_action = t('Clock In');
+      $form['eid'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Employee ID'),
+      '#default_value' => ($uid > 0) ? $uid : NULL,
+      '#required' => TRUE,
+      '#disabled' =>  ($uid > 0) ? TRUE : FALSE,
+      '#size' => '10',
+    );
+    $form['pin'] = array(
+      '#type' => ($uid == 0) ? 'password' : NULL,
+      '#title' => t('Pin'),
+      '#required' => ($uid == 0) ? TRUE : FALSE,
+      '#size' => '10',
+    );
+    $form['jid'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Job/Client ID'),
+      '#description' => t('Enter the ID number of the job you are clocking into or leave blank if unknown.'),
+      '#size' => '10',
+      '#required' => TRUE,
+    );
+    $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => $status_action,
+    );
+  } else {
+      $form['eid'] = array(
+          '#type' => 'textfield',
+          '#title' => t('Employee ID'),
+          '#default_value' => NULL,
+          '#required' => TRUE,
+          '#disabled' =>  FALSE,
+          '#size' => '10',
+      );
+      $form['pin'] = array(
+          '#type' => 'password',
+          '#title' => t('Pin'),
+          '#required' => TRUE,
+          '#size' => '10',
+      );
+      $form['jid'] = array(
+          '#type' => 'textfield',
+          '#title' => t('Job/Client ID'),
+          '#description' => t('Enter the ID number of the job you are clocking into or leave blank if clocking out.'),
+          '#size' => '10',
+          '#required' => FALSE,
+      );
+      $form['submit'] = array(
+          '#type' => 'submit',
+          '#value' => 'Submit',
+      );
+  }
+    return $form;
+
+}
+
+function timeclock_punch_form_validate($form, &$form_state) {
+  if (!timeclock_user_status($form_state['values']['eid'])&& !timeclock_verify_jid($form_state['values']['jid'])) {
+        form_set_error('jid', 'INVALID Job ID');
+  }
+  if (user_is_anonymous() && !user_pin_validate($form_state['values']['eid'], $form_state['values']['pin'])){
+      form_set_error('pin', 'Authentication Failure');
+  }
+}
+
+function timeclock_punch_form_submit($form, &$form_state) {
+
+    timeclock_punch($form_state['values']['eid'], $form_state['values']['jid']);
+}
+
+function timeclock_find_open_punch($uid){
+$query = new EntityFieldQuery();
+$entities = $query->entityCondition('entity_type', 'punch')
+                  ->entityCondition('bundle', 'punch')
+                  ->fieldCondition('field_employee', 'target_id', $uid, '=')
+                  ->fieldCondition('field_out', 'value', 18001, '<=')
+                  ->execute();  
+return key($entities['punch']);
+}
+
+
+
+/**
+ * @param $pid
+ * @return bool
+ */
+
+function timeclock_punch_out($pid, $time = NULL) {
+  global $user;
+  $punch = entity_load_single('punch', $pid);
+  $punch->is_new_revision = TRUE;
+    if (is_null($time)) {
+        $time  = time();
+    }
+  $punch->revision_log = 'Punch out: ' . format_date($time, $type = 'short') .  '. By user: ' . $user->uid . ' Debug Backtrace Function Name: ' . debug_backtrace()[1]['function'];
+  $punch->field_out['und'][0]['value'] = $time;
+  if ($punch->save()) {
+    drupal_get_messages('status');
+    drupal_set_message('Successfully clocked out at: ' . format_date($time));
+    return true;
+  }
+  else {
+    drupal_set_message('There was an error processing your punch.');
+    watchdog('timeclock', 'Error saving punch out for punch id %id', array('%id' => $pid), WATCHDOG_ERROR, $link = NULL);
+    return false;
+    }
+}
+
+/**
+ * @param $uid
+ * @return bool
+ */
+function timeclock_user_status($uid) {
+$query = new EntityFieldQuery();
+$entities = $query->entityCondition('entity_type', 'punch')
+                  ->entityCondition('bundle', 'punch')
+                  ->fieldCondition('field_employee', 'target_id', $uid, '=')
+                  ->fieldCondition('field_out', 'value', 18001, '<=')
+                  ->execute();  
+if (count($entities) == 0) { return FALSE;}  
+  if (count($query->ordered_results) > 1) {
+    drupal_set_message('Employee has more than one uncompleted shift, this should NEVER happen. Please report this issue to the system administrator.', 'error');
+    watchdog('timeclock', 'Multiple uncompleted shifts for user id %uid', array('%uid' => $uid), WATCHDOG_ERROR, $link = NULL);
+  }
+  if (count($query->ordered_results) > 0) {
+    return TRUE;
+  } else {
+    return FALSE;
+  } 
+}
+
+/**
+ *
+ * @param int $uid Employee ID
+ * @param int $jid Job ID
+ */
+function timeclock_punch($uid,$jid) {
+  if (!timeclock_user_status($uid)) {
+    $time = time();
+    timeclock_punch_in($uid, $jid, $time);
+  }
+  else {
+    timeclock_punch_out(timeclock_find_open_punch($uid));
+  }
+}
+
+/**
+ * @param $eid
+ * @param $job
+ * @param $time
+ * @return bool
+ */
+function timeclock_punch_in($eid, $job, $time) {
+  global $user;
+  if (!isset($time)) {
+    $time  = time();
+  }
+  $entity_type = 'punch';
+  $entity = entity_create($entity_type, array('type' => 'punch'));
+  $entity->is_new_revision = TRUE;
+  $entity->revision_log = 'Punch In: ' . format_date(time(), $type = 'short') .  '. By user: ' . $user->uid . ' Debug Backtrace Function Name: ' . debug_backtrace()[1]['function'];
+  $wrapper = entity_metadata_wrapper($entity_type, $entity);
+  $wrapper->uid = $eid;
+  $wrapper->field_in = $time;
+  $wrapper->field_out = 0;
+  $wrapper->field_employee = $eid;
+  $wrapper->field_job = $job;
+  if ($wrapper->save()) {
+    drupal_get_messages('status');
+    drupal_set_message('Successfully clocked in at: ' . format_date($time));
+    $id = $wrapper->getIdentifier();
+    return $id;
+  }
+  else {
+    drupal_set_message('There was an error processing your punch.');
+    watchdog('timeclock', 'Error saving punch in for employee: %eid and job ID: %jid.', array('%eid' => $eid, '%jid' => $job), WATCHDOG_ERROR, $link = 'user/'.$eid);
+    return false;
+  }
+}
+
+function timeclock_verify_jid($jid) {
+  if (is_numeric($jid)) {
+    if (entity_load_single('job', $jid)) {
+      return true;
+    }
+  }
+  else {
+      return false;
+    }
+}
+
+/**
+ * Return an array of # of pay periods forward or back
+ *
+ * $count determines how many payperiods to return. $operator send '+' to
+ * count forward. Default is counting back 10 previous payperiods.
+ * @param int $count
+ * @param string $operator
+ * @return array
+ */
+function timeclock_payperiod_dates($count = 10, $operator = '-') {
+  $current_payperiod = timeclock_current_payperiod();
+  $length = variable_get('timeclock_payperiod_length');
+  $period = 7 * $length;
+  $operator = ($operator == '+') ? NULL : '-';
+  $start = strtotime($operator . $period . ' days', $current_payperiod['current']);
+    $end = strtotime($period . ' days', $start);
+    $payperiods[] = array(
+      'start' => $start,
+      'end' => $end,
+    );
+  for ($i=1; $i<=$count; $i++) {
+    $start = strtotime($operator . $period . ' days', $start);
+    $end = strtotime($period . ' days', $start);
+    $payperiods[] = array(
+      'start' => $start,
+      'end' => $end,
+    );
+  }
+  return $payperiods;
+}
+/**
+ * Custom function to get current pay-period based on settings from admin page
+ * returns array 
+ */ 
+function timeclock_current_payperiod() {
+  $length = variable_get('timeclock_payperiod_length');
+  $start = variable_get('timeclock_payperiod_start');
+  switch($start) {
+    case 0:
+      $day = 'Sunday';
+      break;
+    case 1:
+      $day = 'Monday';
+      break;
+    case 2:
+      $day = 'Tuesday';
+      break;
+    case 3:
+      $day  = 'Wednesday';
+      break;
+    case 4:
+      $day = 'Thursday';
+      break;
+    case 5:
+      $day = 'Friday';
+      break;
+    case 6:
+      $day = 'Saturday';
+      break;
+  }
+  $knownDate_array = variable_get('timeclock_payperiod_knowndate');
+  $knownDate = strtotime($knownDate_array['day'] . '-' . $knownDate_array['month'] . '-' . $knownDate_array['year']);
+  $period = 7 * $length;
+  $nextdate = strtotime($period . ' days', $knownDate);
+  $prevdate = strtotime('-' . $period . ' days', $knownDate);
+
+  //Advance the dates if now is past the start of the next period.
+  $now = strtotime("now");
+  if ($now > $nextdate) {
+    $prevdate = $knownDate;
+    $knownDate = $nextdate;
+    $knownDate_array = array(
+      'day' => intval(gmdate('d', $nextdate)),
+      'month' => intval(gmdate('m', $nextdate)),
+      'year' => intval(gmdate('Y', $nextdate)),
+    );
+    $nextdate = strtotime($period . ' days', $knownDate);
+    variable_set('timeclock_payperiod_knowndate', $knownDate_array);
+  }
+  $array = array(
+    'previous' => $prevdate,
+    'current' => $knownDate,
+    'next' => $nextdate,
+  );
+  return $array;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function timeclock_views_api() {
+  return array(
+    'api' => 3,
+  );
+}
+
+function timeclock_get_client_from_job($job) {
+  $job_data = entity_load('job',array($job));
+  $client = $job_data[$job]->field_client['und'][0]['target_id'];
+  return $client;
+}
+
+function timeclock_get_jobs_from_client($client) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'job')
+      ->entityCondition('bundle', 'job')
+      ->fieldCondition('field_client', 'target_id', $client);
+  $result = $query->execute();
+  return array_keys($result['job']);
+}
+
+function timeclock_entity_info_alter(&$entity_info) {
+  $entity_info['punch']['access callback'] = 'timeclock_punch_entity_access';
+}
+
+function timeclock_punch_entity_access($op, $entity = NULL, $account = NULL) {
+  global $user;
+  switch($op){
+    case 'view':
+      if (($entity->field_employee['und'][0]['target_id'] == $user->uid && user_access('view own timeclock punches') || user_access('view timeclock punches'))){
+        return true;
+      }
+      break;
+    case 'create':
+      // create check
+      return true;
+      break;
+    case 'update':
+      if(user_access('timeclock restrict edit')) {
+        return FALSE;
+      }
+      if(user_access('export approved punches to payroll')){
+        return true;
+      }
+      if(isset($entity->field_date_paid['und'][0]['value']) && $entity->field_payroll_approval['und'][0]['value'] > 0 && !user_access('export approved punches to payroll')){
+        drupal_set_message('Punches that have been paid may not be edited.','error');
+        return false;
+      }
+      if(isset($entity->field_payroll_approval['und'][0]['value']) && $entity->field_payroll_approval['und'][0]['value'] == 1 && !user_access('edit timeclock punches')){
+        drupal_set_message('Punches that have been Approved for payroll may not be edited.','warning');
+        return false;
+      }
+      if ($entity->field_employee['und'][0]['target_id'] == $user->uid && user_access('edit own timeclock punches') || user_access('edit timeclock punches')){
+        return true;
+      }
+      break;
+    case 'delete':
+      // delete check
+      if (user_access('admin timeclock')){
+        return true;
+      }
+      break;
+  }
+  return FALSE;
+}
+
+function timeclock_cron() {
+  $max_diff = 20;
+  $diff = timeclock_diff_ntp();
+  if ($diff != FALSE) {
+    if ($diff > $max_diff) {
+      $subject = variable_get('site_name', "Your Drupal Site") . ': Timeclock - System Time Issue';
+      $body = 'The system time on your Drupal host is incorrect by ' . $diff . ' seconds. This issue will lead to inconsistent time clock punches.<br/>You are getting this message because this email address is listed as an administrative contact.';
+      timeclock_notify_admin($subject, $body);
+    }
+  }
+  //todo timeclock_split_shifts(); So that shifts are split Prior to the react being called.
+}
+
+function timeclock_requirements($phase){
+  if ($phase == 'runtime') {
+    $max_diff = 20;
+    $diff = timeclock_diff_ntp();
+    if($diff != FALSE) {
+      if ($diff > $max_diff ) {
+        $requirements['timeclock_time_accuracy'] = array(
+            'title' => t('Timeclock: Host clock accuracy'),
+            'description' => 'Compares this server`s clock against a public NTP server.',
+            'value' => 'Difference in seconds: ' . $diff,
+            'severity' => REQUIREMENT_WARNING,
+        );
+      } else {
+        $requirements['timeclock_time_accuracy'] = array(
+            'title' => t('Timeclock: host clock accuracy'),
+            'description' => 'Compares this server`s clock against a public NTP server.',
+            'value' => 'Difference in seconds: ' . $diff,
+            'severity' => REQUIREMENT_OK,
+        );
+      }
+    }
+    else
+    {
+      $requirements['timeclock_time_accuracy'] = array(
+          'title' => t('Timeclock: Host clock accuracy'),
+          'description' => 'Compares this server`s clock against a public NTP server.',
+          'value' => 'Could not connect to remote NTP server.',
+          'severity' => REQUIREMENT_WARNING,
+      );
+    }
+
+    return $requirements;
+  }
+}
+
+function timeclock_notify_admin($subject,$body) {
+$params = array(
+    'message' => $body,
+    'subject' => $subject,
+);
+  $params['account'] = 23;
+  $user_fields = user_load(23);
+drupal_mail('timeclock', 'notify', $user_fields->mail, language_default(), $params);
+}
+
+function timeclock_mail($key, &$message, $params) {
+  switch ($key) {
+    case 'notify':
+      $message['subject'] = $params['subject'];
+      $message['body'] = explode('<br/>', $params['message']);
+      break;
+  }
+}
+
+function timeclock_diff_ntp(){
+  $servers[] = "129.6.15.30";
+  $servers[] = "129.6.15.29"; //Getting frequent connection refused errors.
+  $servers[] = "129.6.15.28";
+  $servers[] = "24.56.178.140";//wwv
+  $servers[] = "131.107.13.100";//microsoft
+  $server[] = "time.nist.gov";
+  $servers[] = "216.228.192.69";
+  shuffle($servers);
+  $socket = 37;
+  $i = 0;
+  $limit = 10;
+  $server = '';
+  set_error_handler("timeclock_fsockopen_error_handler");
+  while ($i < $limit && $fp = fsockopen($servers[$i],$socket,$err,$errstr,5)) {
+    if($fp)
+    {
+      fputs($fp, "\n");
+      $timevalue = fread($fp, 49);
+      fclose($fp); # close the connection
+      $timercvd = array();
+      $timercvd[] = $timevalue;
+      $timercvd[] = $err;     # error code
+      $timercvd[] = $errstr;  # error text
+      $server = $servers[$i];
+      restore_error_handler();
+      if(!$timercvd[1])
+      {
+        $timevalue = bin2hex($timercvd[0]);
+        $timevalue = abs(HexDec('7fffffff') - HexDec($timevalue) - HexDec('7fffffff'));
+        if ($timevalue == 0) {
+          return false;
+        }
+        $tmestamp = $timevalue - 2208988800; # convert to UNIX epoch time stamp
+        $timestamp = strtotime('now');
+        $diff = $tmestamp - $timestamp;
+        return abs($diff);
+      }
+      else {
+        return false;
+      }
+      break;
+    }
+    else
+    {
+      ++$i;
+    }
+  }
+
+}
+
+function timeclock_fsockopen_error_handler($errno,$errmsg,$errfile,$errline){
+  if ($errno != 2) {
+    watchdog('timeclock', 'fsockopen error: %no %msg in %file on line %line', array('%no' => $errno, '%msg' => $errmsg, '%file' => $errfile, '%line' => $errline), WATCHDOG_WARNING);
+  }
+}
+
+function timeclock_split_shifts($punch){
+  if ($punch->field_out['und'][0]['value'] > 18001 && timeclock_split_shifts_logic($punch->field_in['und'][0]['value'],$punch->field_out['und'][0]['value'])){
+    timeclock_split_shifts_action($punch);
+  }
+}
+
+
+function timeclock_split_shifts_logic($in, $out){
+  if ($out > $in && date('z',$in) != date('z',$out) && ($out - $in) < 86400) {
+    return TRUE;
+  } else {
+    RETURN FALSE;
+  }
+}
+
+function timeclock_split_shifts_action($punch){
+  set_error_handler("timeclock__error_handler");
+  //set end time to 11:59:59
+  $orig_out = $punch->field_out['und'][0]['value'];
+  $new_out = strtotime(date('m/d/Y',$punch->field_in['und'][0]['value']) . " 23:59:59");
+  $punch->field_out['und'][0]['value'] = $new_out;
+  $punch->is_new_revision = TRUE;
+  $punch->revision_log = 'Shift Split: Debug Backtrace Function Name: ' . debug_backtrace()[1]['function'];
+  $punch->save();
+  //create new punch with same values
+  timeclock_punch_in($punch->field_employee['und'][0]['target_id'], $punch->field_job['und'][0]['target_id'], $new_out + 1);
+  timeclock_punch_out(timeclock_find_open_punch($punch->field_employee['und'][0]['target_id']), $orig_out);
+  restore_error_handler();
+}
+
+function timeclock__error_handler($errno,$errmsg,$errfile,$errline){
+    watchdog('timeclock', 'error: %no %msg in %file on line %line'.debug_backtrace()[1]['function'], array('%no' => $errno, '%msg' => $errmsg, '%file' => $errfile, '%line' => $errline), WATCHDOG_ERROR);
+}
+
+/**
+ * @param QueryAlterableInterface $query
+ */
+function timeclock_query_primary_office_staff_is_null_alter(QueryAlterableInterface $query)
+{
+  $query->leftJoin('field_data_field_primary_office_staff', 'b', 'eck_job.id = b.entity_id');
+  $query->isNull('b.field_primary_office_staff_target_id');
+}
+
+function timeclock_list_my_jobs($uid){
+  //supervisors, get list of all supervised jobs.
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'job')
+    ->fieldCondition('field_primary_office_staff', 'target_id', $uid)
+    ->propertyOrderBy('changed', 'DESC');
+  $result = $query->execute();
+  if (isset($result['job']) && count($result['job'])){
+    $my_jobs = array_keys($result['job']);
+  } else {
+    $my_jobs = [];
+  }
+  unset($query);
+  unset($result);
+  $department_tids = timeclock_get_user_supervised_departments($uid);
+  if (isset($department_tids) && count($department_tids)) {
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'job')
+      ->fieldCondition('field_department', 'tid', $department_tids)
+      ->addTag('primary_office_staff_is_null')
+      ->propertyOrderBy('changed', 'DESC');
+    $result = $query->execute();
+    if (isset($result['job']) && count($result['job'])) {
+      $department_jobs = array_keys($result['job']);
+    }
+    else {
+      $department_jobs = [];
+    }
+  } else {
+    $department_jobs = [];
+  }
+  $jobs = array_unique(array_merge((array)$my_jobs,(array)$department_jobs));
+  return $jobs;
+}
+
+/**
+ * Get all department TIDs related to specified user
+ * returns $departments array with TIDs
+ * @param $uid int
+ * @return array|bool
+ */
+function timeclock_get_user_supervised_departments($uid)
+{
+  if (is_null($uid)){
+    //get current user
+    global $user;
+    $uid = $user->uid;
+  }
+  elseif (is_numeric($uid)){
+    //do nothing
+  }
+  else {
+    return false;
+  }
+  $user_fields = user_load($uid);
+  //load each department the current user supervises into an array.
+  $departments = array();
+  if (!empty($user_fields->field_supervised_departments)) {
+    foreach ($user_fields->field_supervised_departments['und'] as $key => $value) {
+      $departments[] = $value['target_id'];
+    }
+    return $departments;
+  }
+}
+
+/**
+ * Get all possible Job IDs for the departments supervised by selected user
+ * @param $uid int
+ * @return array|bool
+ */
+function timeclock_get_jobs_supervised($uid){
+  if (is_null($uid)){
+    //get current user
+    global $user;
+    $uid = $user->uid;
+  }
+  elseif (is_numeric($uid)){
+    //do nothing
+  }
+  else {
+    return false;
+  }
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'job')
+    ->entityCondition('bundle', 'job')
+    ->fieldCondition('field_department', 'tid', timeclock_get_user_supervised_departments($uid))
+    ->propertyOrderBy('created', 'DESC');
+  $result = $query->execute();
+  $jobs = array_keys($result['job']);
+  return $jobs;
+}
+
+function timeclock_list_supervised_jobs(){
+  global $user;
+  //supervisors, get list of all supervised jobs.
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'job')
+    ->entityCondition('bundle', 'job')
+    ->fieldCondition('field_primary_office_staff', 'target_id', $user->uid)
+    ->propertyOrderBy('changed', 'DESC');
+  $result = $query->execute();
+  if (count($result['job'])){
+    $my_jobs = array_keys($result['job']);
+  } else {
+    $my_jobs = [];
+  }
+  unset($query);
+  unset($result);
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'job')
+    ->fieldCondition('field_department', 'tid', timeclock_get_user_supervised_departments($user->uid))
+    ->propertyOrderBy('changed', 'DESC');
+  $result = $query->execute();
+  if (count($result['job'])){
+    $department_jobs = array_keys($result['job']);
+  } else {
+    $department_jobs = [];
+  }
+  unset($query);
+  unset($result);
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'job')
+    ->entityCondition('bundle', 'non_client_job')
+    ->fieldCondition('field_description', 'tid', 21)
+    ->propertyOrderBy('changed', 'DESC');
+  $result = $query->execute();
+  $all_other_jobs = array_keys($result['job']);
+  $jobs = array_unique(array_merge((array)$my_jobs,(array)$department_jobs, (array)$all_other_jobs));
+  return $jobs;
+}
+
+function timeclock_list_staff_recent_jobs($days = 180,$uid = NULL){
+  if (is_null($uid)){
+    global $user;
+    $uid = $user->uid;
+  }
+  $jobs = array();
+  $past_date = strtotime('-'.$days.' days');
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'punch')
+    ->entityCondition('bundle', 'punch')
+    ->fieldCondition('field_employee', 'target_id', $uid)
+    ->fieldCondition('field_out', 'value', $past_date, '>=')
+    ->fieldOrderBy('field_in', 'value', 'ASC');
+  $result = $query->execute();
+  $punch_ids = array_unique(array_keys($result['punch']));
+  unset($query);
+  unset($result);
+  if (!is_null($punch_ids)) {
+    $punches = entity_load('punch', $punch_ids);
+    $client_jobs = array();
+    $my_departments = array();
+    foreach ($punches as $punch) {
+      $job_id = $punch->field_job['und'][0]['target_id'];
+      $client_jobs[] = $job_id;
+      $job = entity_load('job', array($job_id));
+      $my_departments[] = $job[$job_id]->field_department['und'][0]['tid'];
+    }
+    $my_departments = array_unique($my_departments);
+    $non_client_jobs = array();
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'job')
+      ->entityCondition('bundle', 'non_client_job')
+      ->fieldCondition('field_department', 'tid', $my_departments, 'IN')
+      ->propertyOrderBy('changed', 'DESC');
+    $result = $query->execute();
+    $non_client_jobs = array_keys($result['job']);
+  }
+  if (count($client_jobs) > 0 && count($non_client_jobs) > 0) {
+    $jobs = array_unique(array_merge($client_jobs, $non_client_jobs));
+  }elseif (count($client_jobs) > 0 && count($non_client_jobs) == 0) {
+    $jobs = array_unique($client_jobs);
+  }elseif (count($client_jobs) == 0 && count($non_client_jobs) > 0){
+    $jobs = array_unique($non_client_jobs);
+  } else {
+    $jobs[] = 2;
+  }
+  return $jobs;
+}
+
+function timeclock_form_alter(&$form, &$form_state, $form_id){
+  if ($form_id == 'eck__entity__form_add_punch_punch'){
+    //add custom validator to check for errors before the form is submitted & saved.
+    $form['#validate'][] = 'timeclock_manual_submission_validator';
+  }
+  if ($form_id == 'eck__entity__form_edit_punch_punch'){
+    //add custom validator to check for errors before the form is submitted & saved.
+    $form['#validate'][] = 'timeclock_manual_submission_validator';
+  }
+  global $user;
+  $uid  = $user->uid;
+  if ($form_id == 'eck__entity__form_add_punch_punch' && !user_access('admin timeclock')){
+    $request = explode('/', request_path());
+    if (is_numeric($request[6]) && user_access('edit timeclock punches')) {
+      foreach ($form['field_employee']['und']['#options'] as $key => $name) {
+        if ($key != $request[6]) {
+          unset($form['field_employee']['und']['#options'][$key]);
+        }
+      }
+      $form['field_employee']['und']['#default_value'][0] = $request[6];
+      $form['field_employee']['und']['#disabled'] = TRUE;
+    } elseif (user_access('edit timeclock punches')){
+      //allow selection of employee for authorized users accessing the form directly.
+    } else {
+      foreach ($form['field_employee']['und']['#options'] as $key => $name) {
+        if ($key != $uid) {
+          unset($form['field_employee']['und']['#options'][$key]);
+        }
+      }
+      $form['field_employee']['und']['#default_value'][0] = $uid;
+      $form['field_employee']['und']['#disabled'] = TRUE;
+    }
+    if(user_access('edit timeclock punches')){
+      $source = timeclock_list_supervised_jobs();
+    } else {
+      $source = timeclock_list_staff_recent_jobs(180);
+    }
+    foreach ($form['field_job']['und']['#options']['Job'] as $id => $job){
+      if (!in_array($id,$source)){
+        unset($form['field_job']['und']['#options']['Job'][$id]);
+      }
+    }
+    foreach ($form['field_job']['und']['#options']['Non-Client Job'] as $id => $job){
+      if (!in_array($id,$source)){
+        unset($form['field_job']['und']['#options']['Non-Client Job'][$id]);
+      }
+    }
+  }
+  if ($form_id == 'eck__entity__form_edit_punch_punch' && !user_access('admin timeclock')){
+    if (!user_access('edit timeclock punches')) {
+      foreach ($form['field_employee']['und']['#options'] as $key => $name) {
+        if ($key != $uid) {
+          unset($form['field_employee']['und']['#options'][$key]);
+        }
+      }
+      $form['field_employee']['und']['#default_value'][0] = $uid;
+      $form['field_employee']['und']['#disabled'] = TRUE;
+    }
+    if(user_access('edit timeclock punches')){
+      $source = timeclock_list_supervised_jobs();
+    } else {
+      $source = timeclock_list_staff_recent_jobs(180);
+    }
+    foreach ($form['field_job']['und']['#options']['Job'] as $id => $job){
+      if (!in_array($id,$source)){
+        unset($form['field_job']['und']['#options']['Job'][$id]);
+      }
+    }
+    foreach ($form['field_job']['und']['#options']['Non-Client Job'] as $id => $job){
+      if (!in_array($id,$source)){
+        unset($form['field_job']['und']['#options']['Non-Client Job'][$id]);
+      }
+    }
+  }
+}
+
+
+/**
+ * Implements hook_entity_insert
+ */
+function timeclock_entity_insert($entity, $type){
+  if ($type == "punch") {
+    timeclock_hook_react_call($entity,$type);
+  }
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function timeclock_entity_update($entity, $type) {
+  if ($type == "punch") {
+    timeclock_hook_react_call($entity,$type);
+  }
+}
+
+function timeclock_hook_react_call($entity, $type){
+  if ($type == 'punch') {
+    // Check if the punch needs to be split before running any other react hooks
+    timeclock_split_shifts($entity);
+    foreach (module_implements('timeclock_punch_react') as $module) {
+      $function = $module . '_timeclock_punch_react';
+      $function($entity);
+    }
+  }
+}
+
+function timeclock_manual_submission_validator($form, &$form_state){
+    if ($form_state['values']['field_in']['und'][0]['value'] > $form_state['values']['field_out']['und'][0]['value']) {
+        form_set_error('field_in', 'Shifts may not end before they start.');
+    }
+}
+
+
+function timeclock_get_uids_from_job($job_id, $days=90){
+  $uids = array();
+  if(!empty($job_id) && is_numeric($job_id)) {
+    $past_date = strtotime('-' . $days . ' days');
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'punch')
+      ->entityCondition('bundle', 'punch')
+      ->fieldCondition('field_job', 'target_id', $job_id)
+      ->fieldCondition('field_out', 'value', $past_date, '>=')
+      ->fieldOrderBy('field_in', 'value', 'DESC');
+    $result = $query->execute();
+    $punch_ids = array_keys($result['punch']);
+    $punches = entity_load('punch', $punch_ids);
+    $uids = [];
+    foreach ($punches as $punch) {
+      $uids[] = $punch->field_employee['und'][0]['target_id'];
+    }
+    $uids = array_unique($uids);
+  }
+  return $uids;
+}
+
+function timeclock_get_all_active_uids(){
+  //Get all active users
+  $query = new EntityFieldQuery;
+  $query->entityCondition('entity_type', 'user');
+  $query->propertyCondition('status', '1');
+  $result = $query->execute();
+  return array_keys($result['user']);
+}
+
+/**
+ * @param $user - User object or UID
+ * @param bool $last_name_first - switches display from first last to last, first
+ *
+ * @return string -  Link to user timesheet
+ */
+function timeclock__make_timesheet_link($user, $last_name_first = FALSE){
+  if (!is_object($user)){
+    $user = user_load($user);
+  }
+  $path = '/user/'.$user->uid.'/timesheet/';
+  if ($last_name_first) {
+    $text = $user->field_last_name['und'][0]['safe_value'] . ", " . $user->field_first_name['und'][0]['safe_value'];
+  } else {
+    $text = $user->realname;
+  }
+  return l($text,$path);
+}

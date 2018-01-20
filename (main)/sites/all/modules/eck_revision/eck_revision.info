@@ -1,0 +1,11 @@
+name = ECK Revision
+description = Enables revision for ECK Entity Types.
+dependencies[] = eck
+package = ECK
+core = 7.x
+; Information added by Drupal.org packaging script on 2015-09-15
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "eck_revision"
+datestamp = "1442333647"
+
