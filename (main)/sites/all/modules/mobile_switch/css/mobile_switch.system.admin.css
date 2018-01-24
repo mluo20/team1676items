@@ -5,5 +5,5 @@
 
 .theme-default-mobile em {
   font-style: inherit;
-  content:url("/(main)/9503d0b7fec8eff594e57007be1fa77b_400x400.jpeg");
+  content:url(/main/9503d0b7fec8eff594e57007be1fa77b_400x400.jpeg);
 }
