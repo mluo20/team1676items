@@ -1,0 +1,10 @@
+<script type="text/javascript">
+  function store() {
+    var text = document.getElementById("my_text").value;
+    document.cookie = "text=" + text + "; path=/";
+  }
+</script>
+<form action="page.html"  onsubmit="store()">
+  <input type="text" id="my_text" />
+  <input type="submit" />
+</form>

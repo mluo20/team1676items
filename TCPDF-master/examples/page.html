@@ -1,0 +1,8 @@
+<h1 id="title"></h1>
+<script type="text/javascript">
+  /* this just grabs the value of the first cookie for your site.
+   * if you use cookies elsewhere, you'll need to add logic to 
+   * make sure you get the correct cookie. */
+  var text = document.cookie.split(";")[0].split("=")[1];
+  document.getElementById("title").innerHTML = text;
+</script>
